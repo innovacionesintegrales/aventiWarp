@@ -1,0 +1,29 @@
+#!/bin/bash
+[ -z "$1" ] && echo "Please specify a domain (ex. mydomain.test)" && exit
+
+if [ "$1" == "--help" ]; then
+  echo "COMMAND: setup-ssl"
+  echo "DESCRIPTION: Setup SSL certificate for the project"
+  echo "USAGE: setup-ssl PROJECT_BASE_URL"
+  echo "EXAMPLE: setup-ssl m2.test"
+  exit
+fi
+
+BASE_URL=${1:-m2.test}
+CURRENT_PATH="$(cd "$(dirname "$0")" && pwd)"
+source $CURRENT_PATH/../conf/project.conf
+
+# Generate certificate authority if not it's already setup
+if ! docker-compose exec -T -u root ${DOCKER_SERVICE_APP} cat /root/.local/share/mkcert/rootCA.pem | grep -q 'BEGIN CERTIFICATE'; then
+  $BIN_PATH/setup-ssl-ca
+fi
+
+# Generate the certificate for the specified domain
+docker-compose exec -T -u root ${DOCKER_SERVICE_APP} mkcert -key-file nginx.key -cert-file nginx.crt "$@"
+echo "Moving key and cert to /etc/nginx/certs/..."
+docker-compose exec -T -u root ${DOCKER_SERVICE_APP} chown app:app nginx.key nginx.crt
+docker-compose exec -T -u root ${DOCKER_SERVICE_APP} mv nginx.key nginx.crt /etc/nginx/certs/
+
+# Restart nginx to apply the updates
+echo "Restarting containers to apply updates..."
+$BIN_PATH/restart
